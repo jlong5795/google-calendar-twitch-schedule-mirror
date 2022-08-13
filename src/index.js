@@ -1,12 +1,12 @@
 const axios = require('axios');
 const ical = require('ical');
+const categories = require('./categoryDict');
 
 require('dotenv').config();
 
 const {
   GOOGLE_CALENDAR_ID,
   TWITCH_CHANNEL_ID,
-  TWITCH_CATEGORY_ID,
   TWITCH_OAUTH_TOKEN,
   TWITCH_CLIENT_ID,
 } = process.env;
@@ -20,7 +20,8 @@ async function getGoogleEvents() {
 }
 
 async function getTwitchEvents() {
-  const { data } = await axios.get('https://api.twitch.tv/helix/schedule', {
+  try {
+    const { data } = await axios.get('https://api.twitch.tv/helix/schedule', {
     params: {
       broadcaster_id: TWITCH_CHANNEL_ID,
     },
@@ -31,6 +32,10 @@ async function getTwitchEvents() {
   });
   // TODO: handle pagination...
   return data.data;
+  } catch (error) {
+    console.log(error.response.data)
+  }
+  
 }
 
 async function removeTwitchEvent(event) {
@@ -52,9 +57,11 @@ async function createTwitchEvent(event) {
     timezone: 'UTC',
     is_recurring: false,
     duration: ((event.end - event.start) / 1000 / 60).toString(),
-    category_id: TWITCH_CATEGORY_ID,
+    category_id: categories[event.location].categoryId,
     title: event.summary,
   };
+  console.log("🚀 ~ file: index.js ~ line 63 ~ createTwitchEvent ~ create", categories[event.location].categoryId)
+  
   await axios.post('https://api.twitch.tv/helix/schedule/segment', create, {
     params: {
       broadcaster_id: TWITCH_CHANNEL_ID,
@@ -72,7 +79,7 @@ async function waterfall(promises, cb) {
     try {
       await cb(event);
     } catch (error) {
-      console.error(error.response.data);
+      console.error(error);
     }
     // eslint-disable-next-line no-promise-executor-return
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -82,7 +89,7 @@ async function waterfall(promises, cb) {
 async function sync() {
   const googleEvents = await getGoogleEvents();
   const twitchEvents = await getTwitchEvents();
-  await waterfall(twitchEvents.segments || [], removeTwitchEvent);
+  await waterfall(twitchEvents?.segments || [], removeTwitchEvent);
   await waterfall(googleEvents, createTwitchEvent);
 }
 
